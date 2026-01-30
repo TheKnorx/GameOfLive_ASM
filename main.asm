@@ -16,6 +16,7 @@ section .data
 section .text
 
 global main
+global FIELD_WIDTH, FIELD_HEIGHT, FIELD_AREA, FIELDS_ARRAY
 ; project functions that may not return
 extern try_ascii_to_int
 ; project functions
