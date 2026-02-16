@@ -29,13 +29,43 @@ section .bss
 section .data
     global  STDIO_BUFFER_SIZE
     STDIO_BUFFER_SIZE:  equ     0x0200  ; allocate 512 bytes for this stdio buffer  
+    FORMAT_SPECIFIER_BEGIN: equ '%'     ; begin of a format specifyer followed by a character
+    FORMAT_SPECIFIER_STRING:equ 's'     ; %s
+    FORMAT_SPECIFIER_DIGET: equ 'd'     ; %d
 section .text
 
 %include "core.lib.inc"
 
+; Macro for setting the sys_errno variable with the negated value in rax
 %macro SET_ERRNO 0
     neg     eax             ; negate rax
     mov     [SYS_ERRNO], eax; store the value in eax into sys_errno
+%endmacro
+
+; Macro for dertermining which register holds the value of the format specifier
+%macro DETERMIN_SPECIFIER_REGISTER 0
+    ; what follows now can only be described as the most anoying thing every written
+    cmp     rbx, 0x00 
+    je      %%use_rdx
+    cmp     rbx, 0x01
+    je      %%use_r10
+    cmp     rbx, 0x02
+    je      %%use_r8
+    cmp     rbx, 0x03
+    je      %%use_r9
+    %%use_rdx:  
+        mov     rax, rdx
+        jmp     %%end
+    %%use_r10:  
+        mov     rax, r10 
+        jmp     %%end
+    %%use_r8:   
+        mov     rax, r8
+        jmp     %%end
+    %%use_r9:   
+        mov     rax, r9
+        jmp     %%end
+    %%end:
 %endmacro
 
 ; glibc functions that are needed in the meantime to support the bridge between glibc and core.lib
@@ -135,17 +165,73 @@ main:  ; actually _start
 ;             const char *restrict format, ...)
 ; <<< this function lays the foundation of all *printf functions
 ; <<< BUT we interpret the FILE* stream as a file-descriptor, not as a FILE object --> therefore we pass a fd here not a FILE*! 
+; <<< Also we only support the following format specifier: %d, %s
+; <<< Additionally we do not support masking of format specifiers in any kind
+; <<< And we also dont support more than 4 format arguments :/
 global sys_fprintf
 sys_fprintf: 
     .enter: ENTER 
 
-    xchg    rdi, rsi        ; exchange rdi and rsi values - parameter stream now in rsi and parameter format now in rdi
+    push    r12             ; make r12 available for storage
+    push    r13             ; make r13 available for storage
+    push    r15             ; make r14 available for storage
+    push    r15             ; make r15 available for storage
+    push    rbx             ; make rbx available for stoarge
+    xor     rbx, rbx        ; use rbx as indicator which format specifier register to use
+
+    ; xchg    rdi, rsi        ; exchange rdi and rsi values - parameter stream now in rsi and parameter format now in rdi
     ; now we write the string in rsi into the fd at parameter stream using sys_fputc and a for loop
     xor     rcx, rcx        ; clear index
     .for: 
+        mov     al, [rsi+rcx]; move current char at index position into al
+        test    al, al      ; check if al is empty = null terminator
+        jz      .return     ; if its empty, return from this function
+        ; else continue loop
+        cmp     al, FORMAT_SPECIFIER_BEGIN ; check if al marks the beginning of a format specifier
+        jne     .char       ; if it does not mark the beginning of a specifier, just output the char
+        ; else fall through to handling the specifier
+        .specifier: 
+            add     rcx, 1
+            ; next determin which register hold the value of this format specifier
+            DETERMIN_SPECIFIER_REGISTER ; value is now in rax
+            add    rbx, 0x01        ; increment format specifier register counter 
+
+            mov     al, [rsi+rcx]; determin the actual kind of value specified by the specifier - eigther %d or %s
+            cmp     al, FORMAT_SPECIFIER_STRING  ; check which specifier it is 
+
+            .string:  ; if the specifier == %s, we call this function recursivly and just append the string to the buffer this way
+                mov     r12, rdi    ; preserve rdi from function call
+                mov     r13, rsi    ; preserve rsi from function call
+                mov     r14, rdx    ; preserve rdx from function call
+                mov     r15, r10    ; preserve r10 from function call
+                push    r8          ; preserve r8  from function call
+                push    r9          ; preserve r9  from function call
+
+                ; int fprintf(FILE *restrict stream, const char *restrict format, ...)
+                ; rdi - parameter stream - already in rdi
+                mov     rsi, rax    ; parameter format - in our case its a format parameter
+                call    sys_fprintf ; make recursive call - we ignore the return value
+
+                mov     rdi, r12    ; restore rdi 
+                mov     rsi, r13    ; restore rsi
+                mov     rdx, r14    ; restore rdx 
+                mov     r10, r15    ; restore r10
+                pop     r8          ; restore r8
+                pop     r9          ; restore r9
+                jmp     .end_specifier ; jump to end of specifier section
+            .digit:  ; if the specifier == %d, we call 
+
+        .end_specifier:     jmp     .for  ; jmp to begin of loop
+        .char: 
+
+    add     rcx, 0x01       ; rcx++ - index++
+    jmp     .for            ; repeat the loop
 
 
     .return: 
+        pop     r13         ; restore pushed r13
+        pop     r12         ; restore pushed r12
+        mov     rax, rcx    ; move index into rax for returning
         lEAVE
         ret 
 
