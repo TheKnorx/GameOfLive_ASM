@@ -130,26 +130,29 @@ main:  ; actually _start
         hlt                     ; execution shouldnt reach this point
 
 
-; Replacement-function for: 
-; int printf(const char *restrict format, ...);
-; --> needed libcalls: 
-; --> needed syscalls: 
-; --> needed asm-inst: 
-sys_printf: 
-    .enter: ENTER
-    
+; Replacement-function for:
+; int fprintf(FILE *restrict stream,
+;             const char *restrict format, ...)
+; <<< this function lays the foundation of all *printf functions
+; <<< BUT we interpret the FILE* stream as a file-descriptor, not as a FILE object --> therefore we pass a fd here not a FILE*! 
+global sys_fprintf
+sys_fprintf: 
+    .enter: ENTER 
 
+    xchg    rdi, rsi        ; exchange rdi and rsi values - parameter stream now in rsi and parameter format now in rdi
+    ; now we write the string in rsi into the fd at parameter stream using sys_fputc and a for loop
+    xor     rcx, rcx        ; clear index
+    .for: 
 
 
     .return: 
-        LEAVE
-        ret
+        lEAVE
+        ret 
 
 
-sys_snprintf: nop
-sys_fopen: nop
-sys_fprintf: nop
-sys_perror: nop
+sys_printf: hlt
+sys_snprintf: hlt
+sys_perror: hlt
 
 ; Replacement-function for: 
 ; int fputc(int c, FILE *stream)
@@ -240,6 +243,30 @@ sys_fflush:
         jmp     .return             ; return from function
     .normal: xor    rax, rax        ; clear rax as we return with 0 on success
     .return:
+        LEAVE
+        ret
+
+
+; Replacement-function for: 
+; FILE *fopen(const char *restrict pathname, const char *restrict mode);
+; --> needed syscalls: open
+; >>> int open(const char *path, int oflag, ...);
+; <<< we DO NOT return a ptr to a FILE-object, instead we return a file-descriptor!
+global sys_fopen
+sys_fopen:
+    .enter: ENTER
+
+    mov     rax, SYS_OPEN   ; move syscall number into rax
+    ; rdi - parameter path - already in rdi with parameter pathname
+    ; rsi - parameter oflag - already in rsi with parameter mode
+    syscall                 ; execute syscall open
+    test    rax, rax        ; check if syscall was successful
+    js      .error          ; if it was not, handle the error and return from function
+    jmp     .return         ; else return from this function --> rax = file descriptor 
+    .error: 
+        SET_ERRNO
+        mov     rax, -1     ; return -1 on failiure
+    .return: 
         LEAVE
         ret
 
