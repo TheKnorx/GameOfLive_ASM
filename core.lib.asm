@@ -68,6 +68,24 @@ section .text
     %%end:
 %endmacro
 
+; Macro for preserving and restoring all registers for the sys_printf function; 
+%macro PRESERVE_REGISTERS 0
+    mov     r12, rdi    ; preserve rdi from function call
+    mov     r13, rsi    ; preserve rsi from function call
+    mov     r14, rdx    ; preserve rdx from function call
+    mov     r15, r10    ; preserve r10 from function call
+    push    r8          ; preserve r8  from function call
+    push    r9          ; preserve r9  from function call
+%endmacro
+%macro RESTORE_REGISTERS 0
+    mov     rdi, r12    ; restore rdi 
+    mov     rsi, r13    ; restore rsi
+    mov     rdx, r14    ; restore rdx 
+    mov     r10, r15    ; restore r10
+    pop     r8          ; restore r8
+    pop     r9          ; restore r9
+%endmacro
+
 ; glibc functions that are needed in the meantime to support the bridge between glibc and core.lib
 extern fileno
 
@@ -191,35 +209,53 @@ sys_fprintf:
         jne     .char       ; if it does not mark the beginning of a specifier, just output the char
         ; else fall through to handling the specifier
         .specifier: 
-            add     rcx, 1
-            ; next determin which register hold the value of this format specifier
+            ; determin which register holds the value of this format specifier
             DETERMIN_SPECIFIER_REGISTER ; value is now in rax
+            push    rax             ; save rax onto stack
             add    rbx, 0x01        ; increment format specifier register counter 
 
-            mov     al, [rsi+rcx]; determin the actual kind of value specified by the specifier - eigther %d or %s
-            cmp     al, FORMAT_SPECIFIER_STRING  ; check which specifier it is 
+            add     rcx, 1          ; set index to the specifier
+            mov     al, [rsi+rcx]   ; determin the actual kind of value specified by the specifier - eigther %d or %s
+            cmp     al, 's'         ; check if its a string specifier
+            jne     .digit          ; if its %d, then handle the digit
+            ; else fall through to .string
 
             .string:  ; if the specifier == %s, we call this function recursivly and just append the string to the buffer this way
-                mov     r12, rdi    ; preserve rdi from function call
-                mov     r13, rsi    ; preserve rsi from function call
-                mov     r14, rdx    ; preserve rdx from function call
-                mov     r15, r10    ; preserve r10 from function call
-                push    r8          ; preserve r8  from function call
-                push    r9          ; preserve r9  from function call
+                pop     rax         ; restore format specifier parmameter value
+                PRESERVE_REGISTERS
 
                 ; int fprintf(FILE *restrict stream, const char *restrict format, ...)
                 ; rdi - parameter stream - already in rdi
-                mov     rsi, rax    ; parameter format - in our case its a format parameter
+                mov     rsi, rax    ; parameter format - in our case it doesnt contain any format specifier, just the string itself
                 call    sys_fprintf ; make recursive call - we ignore the return value
 
-                mov     rdi, r12    ; restore rdi 
-                mov     rsi, r13    ; restore rsi
-                mov     rdx, r14    ; restore rdx 
-                mov     r10, r15    ; restore r10
-                pop     r8          ; restore r8
-                pop     r9          ; restore r9
+                RESTORE_REGISTERS
                 jmp     .end_specifier ; jump to end of specifier section
             .digit:  ; if the specifier == %d, we call 
+                PRESERVE_REGISTERS
+
+                ; char* itoa(char str[restrict .size], size_t size, int number)
+                mov     rdi, 20     ; size of memory for a buffer - 20 is the max amount of digits in a 64 bit register
+                call    sys_malloc  ; allocate buffer
+                pop     rdx         ; parameter number - pop format specifier parmameter value into rdx 
+                push    rax         ; store pointer to buffer in stack    
+                mov     rdi, rax    ; parameter str[restrict .size]
+                mov     rsi, 20     ; parameter size
+                call    sys_itoa    ; convert int to ascii --> rax = modified ptr to buffer
+
+                ; now we also do a recursive function call to put the created string into the stdio buffer
+                ; int fprintf(FILE *restrict stream, const char *restrict format, ...)
+                mov     rdi, r12    ; parameter stream - restore saved rsi from r12
+                mov     rsi, rax    ; parameter format - created by sys_itoa - just a string without format parameters
+                call    sys_printf  ; make recursive call - we ignore the return value
+
+                ; the string was put into the buffer (and possibly flushed) - now free the allocated buffer
+                ; void free(void *_Nullable ptr);
+                pop     rdi         ; parameter ptr - pop pushed pointer from before into rdi
+                call    sys_free    ; free the memory
+
+                RESTORE_REGISTERS
+                ; and fall through to .end_specifier
 
         .end_specifier:     jmp     .for  ; jmp to begin of loop
         .char: 
@@ -237,8 +273,8 @@ sys_fprintf:
 
 
 sys_printf: hlt
-sys_snprintf: hlt
 sys_perror: hlt
+
 
 ; Replacement-function for: 
 ; int fputc(int c, FILE *stream)
@@ -585,6 +621,46 @@ sys_atoi:
     .return:  ; return from function --> number in rax 
         LEAVE
         ret
+
+
+; Own implementation of:
+; char* itoa(char str[restrict .size], size_t size, int number)
+; <<< str is a pointer to a buffer with a fixed length of size; parameter number is the number to be converted into ascii
+; <<< this function does append the null terminator to the buffer --> so buffer has to be +1 for size
+; <<< returns the amount of ints converted to ascii chars
+; <<< this implementation implements itoa behavior with a mix of snprintf behavior
+global sys_itoa
+sys_itoa:
+    ; no prolog or epilog needed
+    ; we convert an integer into a ascii number by dividing the int by 10, adding to the rest 0x20 to make it ascii and appending it to a buffer
+    ; as we convert the lowest digits first we have to store them backwards into the buffer (big endian)!
+    ; buffer is already in rdi
+
+    mov     r9, 0x0A            ; move into rcx the divisor - 10d
+    mov     rcx, rsi            ; move size of buffer into index register
+    sub     rcx, 0x01           ; decrement buffer size to make it a true array index len
+    mov     byte [rdi+rcx], 0x00; move null terminator at end of buffer
+    sub     rcx, 0x01           ; decrement buffer index
+    mov     rax, rdx            ; move the int to be converted into rax for dividing
+    .next:  ; convert one digit at the time
+        test    rax, rax        ; check if rax is empty
+        jz      .return         ; if its empty, we converted all digits, so we return from this function
+        ; else we continue converting the next digit
+        xor     rdx, rdx        ; clear rdx so it doesnt mess with the DIV
+        div     r9              ; divide int in rax / 10 --> rest in rdx
+
+        add     dl, 0x30        ; add to the rest 30 to make it a ascii number
+        mov     byte[rdi+rcx], dl; write the converted ascii number to the buffer
+        sub     rcx, 0x01       ; rcx-- or index--
+        jmp     .next           ; convert the next number
+
+    .return: 
+        mov     rax, rdi        ; move pointer to buffer into rax
+        ; now add the empty space at the beginning of the buffer from the pointer, so it points directly to the value
+        add     rcx, 0x01       ; add one to index to compensate for ADD at end of loop
+        lea     rax, [rax+rcx]  ; move pointer forward to value
+        ret                     ; return with the pointer pointing the the start of the value
+
 
 
 ; Replacement function for:
