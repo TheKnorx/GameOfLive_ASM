@@ -364,7 +364,8 @@ sys_fflush:
     mov     rdi, STDOUT     ; move fd of stdout into rdi
     jmp     .check_rdi_end  ; skip .determin_fd section
     .determin_fd:   
-        call fileno         ; extract the file-descriptor from the FILE* stream to get the parameter filedes
+        jmp     .check_rdi_end  ; skip this for now cause when using sys_fopen implementation, we already pass a fd in rdi
+        call    fileno      ; extract the file-descriptor from the FILE* stream to get the parameter filedes
         mov     rdi, rax    ; parameter filedes - move the returned fd from fileno into rsi 
     .check_rdi_end:  ; label for skipping the previous label
     mov     rax, SYS_WRITE  ; move number of syscall into rax
@@ -399,19 +400,33 @@ sys_fflush:
 ; Replacement-function for: 
 ; FILE *fopen(const char *restrict pathname, const char *restrict mode);
 ; --> needed syscalls: open
-; >>> int open(const char *path, int oflag, ...);
+; >>> int open(const char *path, int oflag, ...);  - variadic argument mode
 ; <<< we DO NOT return a ptr to a FILE-object, instead we return a file-descriptor!
+; <<< also we do not support variadic function arguments, just path and oflag
+; <<< and we also ONLY support read (r) and write (w) as mode parameter
 global sys_fopen
 sys_fopen:
     .enter: ENTER
 
+    ; determin which mode was passed to the function in parameter mode
+    cmp     byte [rsi], 'w' ; check whether the mode is read or write using the first char in the mode string
+    je      .write          ; mode == write
+    jne     .read           ; move == read
+    .write:  ; if we write, we automatically do a create if it does not exist and a trunciate of the content if it does
+        mov     rsi, O_WRONLY | O_CREAT | O_TRUNC   ; parameter oflag  - write only from parameter mode
+        mov     rdx, 0x1A4  ; also we have to set the mode to 0644
+        jmp     .check_mode_end ; skip .read section
+    .read: 
+        mov     rsi, O_RDONLY   ; parameter oflag  - read only from parameter mode
+        ; and fall through
+    .check_mode_end:  ; label for skipping the above labels and continuing execution here
+
     mov     rax, SYS_OPEN   ; move syscall number into rax
-    ; rdi - parameter path - already in rdi with parameter pathname
-    ; rsi - parameter oflag - already in rsi with parameter mode
-    syscall                 ; execute syscall open
-    test    rax, rax        ; check if syscall was successful
-    js      .error          ; if it was not, handle the error and return from function
-    jmp     .return         ; else return from this function --> rax = file descriptor 
+    ; rdi - parameter path - already in rdi from parameter pathname
+    syscall                 ; execute open syscall --> rax = file descriptor
+    test    rax, rax        ; check if rax is a negative number
+    js      .error          ; if rax < 0: set errno and return from function
+    jmp     .return         ; else just return from this function
     .error: 
         SET_ERRNO
         mov     rax, -1     ; return -1 on failiure

@@ -11,9 +11,9 @@ section .text
 
 global try_write_game_field
 ; glibc functions and variables
-extern snprintf, fopen, perror
+extern snprintf, perror
 ; core.lib functions and variables
-extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf
+extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf, sys_fopen
 ; project intern functions and variables
 extern FIELD_AREA, FIELD_WIDTH, FIELD_HEIGHT, GENERATIONS
 
@@ -62,9 +62,9 @@ try_write_game_field:
     xor     rax, rax                ; clear rax
     mov     rdi, [CURRENT_FILENAME] ; parameter *restrict pathname
     mov     rsi, FOPEN_FILEMODE     ; parameter *restrict mode
-    call    fopen                   ; create the new file and open it
-    cmp     rax, 0x00               ; compare return value of fopen --> success means != NULL
-    je      .failed                 ; the return value == NULL --> print error and exit
+    call    sys_fopen               ; create the new file and open it
+    test    rax, rax                ; check return value of fopen --> success means != NULL
+    jz      .failed                 ; the return value == NULL --> print error and exit
     mov     [CURRENT_FILESTREAM], rax; move file stream ptr into variable
 
     ; as the filename is not longer of use, free its allocated space

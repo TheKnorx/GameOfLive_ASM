@@ -2,8 +2,14 @@
 
 ; generell constants
 %define NULL 			0x00        ; ((void *) 0)
+
+; stdio constants: 
+%define STDOUT          0x01        ; stdout fd 
 %define EOF             -1
-%define STDOUT          0x01        ; stdout fd           
+%define O_RDONLY        0x00        ; for mode "r" in open()
+%define O_WRONLY        0x01        ; for mode "w" in open()
+%define O_CREAT         0x40        ; for mode "w" in open() -- 64
+%define O_TRUNC         0x0200      ; for mode "w" in open() -- 512
 
 ; syscall number constants: 
 %define SYS_WRITE       1
@@ -12,7 +18,6 @@
 %define SYS_MUNMAP  	11
 %define SYS_MREMAP 		25
 %define SYS_EXIT        60
-
 
 ; map constants: 
 %define PROT_READ       0x01
@@ -25,10 +30,8 @@
 %define MAP_ANONYMOUS 	0x20
 %define MREMAP_MAYMOVE 	0x01
 
-
 ; memory allocator constants
 %define MEM_HEAD_LEN	0x08
-
 
 
 ; macro for doing the prolog

@@ -33,13 +33,19 @@ simulate:
     .enter: ENTER
     
     push    rbx             ; make rbx available for storing loop index --> so it doesn't get garbled by function calls
+    mov     rbx, [GENERATIONS] ; move amount of generations into index variable - we start counting from the top
     push    r12             ; make r12 available for storing which field to read from
     mov     r12, 0x1        ; set r12 to 1 --> we xor this on every loop so if we want to start at 0, we have to set it to 1 before
     
     push    r13             ; make r13 available for cell row index counter
     push    r14             ; make r14 available for cell column index counter
 
-    mov     rbx, [GENERATIONS]  ; move generations into index variable
+    ; write game field to start into file
+    ; (int* field_to_save, int generation)[]
+    mov     rdi, [FIELDS_ARRAY] ; parameter field_to_save - move pointer to first game field into rdi
+    mov     rsi, rbx            ; parameter generations - move amount of generations into rsi
+    call    try_write_game_field; write first game field to file; !we might not return from this call!
+
     .for_generation:  ; iterate through all generations simulating them
         cmp     rbx, 0          ; if rbx > 0 meaning still have to simulate some generations (>= cause of the initial dec at begin of loop)
         jle     .return         ; else we break the loop and return to main function
@@ -152,12 +158,6 @@ _main:
     .init_field:  ; init the game field; !we might not get back from this section!
         call    try_alloc_fields    ; allocate the two game fields
         call    configure_field     ; now we fill the field with some predefined values
-
-    ; write game field to start into file
-    ; (int* field_to_save, int generation)[]
-    mov     rdi, [FIELDS_ARRAY]     ; move pointer to first gma field into rdi
-    mov     rsi, 0                  ; we are at the first/0th generation
-    call    try_write_game_field    ; write first game field to file; !we might not return from this call!
 
     call    simulate        ; simulate the generations
 
