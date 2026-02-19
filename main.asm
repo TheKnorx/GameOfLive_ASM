@@ -16,10 +16,8 @@ global FIELD_WIDTH, FIELD_HEIGHT, FIELD_AREA, FIELDS_ARRAY, GENERATIONS
 extern try_alloc_fields
 ; project functions (that always return)
 extern configure_field, free_fields, decide_cell_state, decide_cell_state, clear_field, ascii_to_int, try_write_game_field
-; glibc functions:
-extern printf
 ; core.lib functions
-extern sys_atoi
+extern sys_atoi, sys_printf, sys_memset
 
 %include "core.lib.inc"
 
@@ -60,8 +58,13 @@ simulate:
         ; (int* field_ptr)[-]
         mov     r13, rsi        ; save rsi in r13 for now
         mov     r14, rdi        ; save rdi in r14 for now
-        ; rdi - parameter field_ptr - already in rdi
-        call    clear_field     ; clear the field to write to
+
+        ; void *memset(void s[.n], int c, size_t n);
+        ; rdi - parameter s[.n] - already in rdi
+        mov     rsi, 0x00       ; parameter c - empty byte
+        mov     rdx, [FIELD_AREA]; parameter n
+        call    sys_memset      ; clear the field at rdi
+
         mov     rsi, r13        ; restore rsi from r13
         mov     rdi, r14        ; restore rdi from r14
 
@@ -179,7 +182,7 @@ _main:
         xor     rax, rax            ; clear rax
         mov     rdi, USAGE_TEXT     ; parameter format
         mov     rsi, [r12]          ; first format parameter
-        call    printf
+        call    sys_printf          ; print the usage text
         ; fall through to .return section
 
     .return:  ; pop any pushed registers & do the epilog

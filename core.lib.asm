@@ -242,7 +242,26 @@ sys_fprintf:
         ret 
 
 
-sys_printf: hlt
+; Replacement-function for: 
+; int printf(const char *restrict format, ...);
+; needed libcalls: sys_fprintf
+; int fprintf(FILE *restrict stream, const char *restrict format, ...)
+; <<< sys_fprintf is restricted in the amount of arguments it can take as format parameters
+;     therefore printf is also restricted to that amount!
+global sys_printf
+sys_printf:
+    ; no prolog or epilog needed cause we are just a simple bridge between user and sys_fprintf to stdout
+    ; now move all the function arguments one to the left acording to the order in System V ABI passing convention
+    ; except r9, whoms value just gets overwritten
+    mov     r9, r8
+    mov     r8, rcx
+    mov     rcx, rdx
+    mov     rdx, rsi 
+    mov     rsi, rdi
+    mov     rdi, STDOUT     ; parameter stream = stdout
+    call    sys_fprintf     ; print to stdout --> rax = amount of chars printed
+    ret                     ; return from function with rax
+
 sys_perror: hlt
 
 

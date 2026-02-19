@@ -54,23 +54,6 @@ try_alloc_fields:
         ret
 
 
-; function for clearing a field pointed to by rdi
-; for the implementation we just use the assembly machine-gun 'rep movsb`
-; (int* field_ptr)[-]
-clear_field: 
-    ; No prolog needed
-
-    ; rdi already contains destination memory address
-    mov     rcx, [FIELD_AREA]   ; move number of bytes to be replaced into counter register
-    mov     al, 0x00            ; move char to replace the memory with into al --> here we use an empty byte
-    cld                         ; clear direction flag so that we overwrite upwards from the base memory address
-    rep stosb                   ; overwrite whole allocated memory with zeros
-
-    ; No epilog needed
-    ret
-
-
-
 ; free the allocated game field stored at the FIELDS_ARRAY array
 ; (-)[-]
 free_fields:  
