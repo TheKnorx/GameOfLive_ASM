@@ -48,22 +48,22 @@ section .text
     cmp     rbx, 0x00 
     je      %%use_rdx
     cmp     rbx, 0x01
-    je      %%use_r10
+    je      %%use_rcx
     cmp     rbx, 0x02
     je      %%use_r8
     cmp     rbx, 0x03
     je      %%use_r9
     %%use_rdx:  
-        mov     rax, rdx
+        mov     rax, r14
         jmp     %%end
-    %%use_r10:  
-        mov     rax, r10 
+    %%use_rcx:  
+        mov     rax, r15 
         jmp     %%end
     %%use_r8:   
-        mov     rax, r8
+        mov     rax, [rbp-8*2]
         jmp     %%end
     %%use_r9:   
-        mov     rax, r9
+        mov     rax, [rbp-8*2]
         jmp     %%end
     %%end:
 %endmacro
@@ -183,25 +183,34 @@ main:  ; actually _start
 ;             const char *restrict format, ...)
 ; <<< this function lays the foundation of all *printf functions
 ; <<< BUT we interpret the FILE* stream as a file-descriptor, not as a FILE object --> therefore we pass a fd here not a FILE*! 
-; <<< Also we only support the following format specifier: %d, %s
-; <<< Additionally we do not support masking of format specifiers in any kind
-; <<< And we also dont support more than 4 format arguments :/
+; <<< We only support the following format specifier: %d and %s
+; <<< Additionally we do not support masking of format specifiers like so: "%%", cause I am too lazy to implement this ;)
+; <<< And we also dont support more than 4 format arguments :/ - rdx, rcx, r8, r9; cause this is not needed by the program itself
 global sys_fprintf
 sys_fprintf: 
-    .enter: ENTER 
+    .enter:  ; Special prolog to preserver the last possible format string parameters using a fixed access point
+        push    rbp
+        mov     rbp, rsp
+        push    r8          ; push/save r8 function argument onto stack --> access through [rbp-8*1]
+        push    r9          ; push/save r9 function argument onto stack --> access through [rbp-8*2]
+        and     rsp, -16
 
     push    r12             ; make r12 available for storage
     push    r13             ; make r13 available for storage
     push    r15             ; make r14 available for storage
     push    r15             ; make r15 available for storage
     push    rbx             ; make rbx available for stoarge
+    mov     r12, rdi        ; preserve rdi from function call
+    mov     r13, rsi        ; preserve rsi from function call
+    mov     r14, rdx        ; preserve rdx from function call
+    mov     r15, rcx        ; preserve rcx from function call
     xor     rbx, rbx        ; use rbx as indicator which format specifier register to use
+    ; from this point on, we use the callee saved registers for accessing the function arguments 
 
-    ; xchg    rdi, rsi        ; exchange rdi and rsi values - parameter stream now in rsi and parameter format now in rdi
-    ; now we write the string in rsi into the fd at parameter stream using sys_fputc and a for loop
-    xor     rcx, rcx        ; clear index
+    ; now loop through the chars of the string, print them out or handle a format specifier if we encounter one
+    xor     rcx, rcx        ; use rcx as an index 
     .for: 
-        mov     al, [rsi+rcx]; move current char at index position into al
+        mov     al, [r13+rcx]; move current char at index position into al
         test    al, al      ; check if al is empty = null terminator
         jz      .return     ; if its empty, return from this function
         ; else continue loop
@@ -211,29 +220,26 @@ sys_fprintf:
         .specifier: 
             ; determin which register holds the value of this format specifier
             DETERMIN_SPECIFIER_REGISTER ; value is now in rax
+            add     rbx, 0x01       ; increment format specifier register counter 
+            add     rcx, 0x01       ; increment index --> set index to the specifier
+            push    rcx             ; save rcx onto stack
             push    rax             ; save rax onto stack
-            add    rbx, 0x01        ; increment format specifier register counter 
 
-            add     rcx, 1          ; set index to the specifier
-            mov     al, [rsi+rcx]   ; determin the actual kind of value specified by the specifier - eigther %d or %s
+            mov     al, [r13+rcx]   ; determin the actual kind of value specified by the specifier - eigther %d or %s
             cmp     al, 's'         ; check if its a string specifier
             jne     .digit          ; if its %d, then handle the digit
             ; else fall through to .string
 
             .string:  ; if the specifier == %s, we call this function recursivly and just append the string to the buffer this way
                 pop     rax         ; restore format specifier parmameter value
-                PRESERVE_REGISTERS
 
                 ; int fprintf(FILE *restrict stream, const char *restrict format, ...)
-                ; rdi - parameter stream - already in rdi
+                mov     rdi, r12    ; parameter stream
                 mov     rsi, rax    ; parameter format - in our case it doesnt contain any format specifier, just the string itself
                 call    sys_fprintf ; make recursive call - we ignore the return value
 
-                RESTORE_REGISTERS
-                jmp     .end_specifier ; jump to end of specifier section
+                jmp     .end_specifier  ; jump to end of section 
             .digit:  ; if the specifier == %d, we call 
-                PRESERVE_REGISTERS
-
                 ; char* itoa(char str[restrict .size], size_t size, int number)
                 mov     rdi, 20     ; size of memory for a buffer - 20 is the max amount of digits in a 64 bit register
                 call    sys_malloc  ; allocate buffer
@@ -245,30 +251,42 @@ sys_fprintf:
 
                 ; now we also do a recursive function call to put the created string into the stdio buffer
                 ; int fprintf(FILE *restrict stream, const char *restrict format, ...)
-                mov     rdi, r12    ; parameter stream - restore saved rsi from r12
+                mov     rdi, r12    ; parameter stream - restore saved rdi from r12
                 mov     rsi, rax    ; parameter format - created by sys_itoa - just a string without format parameters
-                call    sys_printf  ; make recursive call - we ignore the return value
+                call    sys_fprintf ; make recursive call - we ignore the return value
 
                 ; the string was put into the buffer (and possibly flushed) - now free the allocated buffer
                 ; void free(void *_Nullable ptr);
-                pop     rdi         ; parameter ptr - pop pushed pointer from before into rdi
+                pop     rdi         ; parameter ptr - pop pushed rax/pointer from before into rdi
                 call    sys_free    ; free the memory
 
-                RESTORE_REGISTERS
-                ; and fall through to .end_specifier
+                ; fall through to .end_specifier - end of section 
+        .end_specifier: 
+            pop     rcx             ; restore rcx counter variable
+            jmp     .continue_loop  ; and continue the loop
 
-        .end_specifier:     jmp     .for  ; jmp to begin of loop
-        .char: 
+        .char:  ; pass the char to fputc and fputc handles it from there
+            ; int fputc(int c, FILE *stream);
+            push    rcx             ; save rcx counter variable
+            xor     rdi, rdi        ; clear rdi
+            mov     dil, [r13+rcx]  ; parameter c - put the char from the string into 
+            mov     rsi, r13        ; parameter stram - saved in r13
+            call    sys_fputc       ; pass char along to fputc
+            pop     rcx             ; restore rcx counter variable
+            ; fall through to .continue_loop
 
-    add     rcx, 0x01       ; rcx++ - index++
-    jmp     .for            ; repeat the loop
-
+        .continue_loop: 
+            add     rcx, 0x01       ; rcx++ - index++
+            jmp     .for            ; repeat the loop
 
     .return: 
+        pop     rbx         ; restore pushed rbx
+        pop     r15         ; restore pushed r15
+        pop     r14         ; restore pushed r14
         pop     r13         ; restore pushed r13
         pop     r12         ; restore pushed r12
         mov     rax, rcx    ; move index into rax for returning
-        lEAVE
+        LEAVE               ; we use the standard epilog so the pushed values from earlier simply get deleted
         ret 
 
 
@@ -330,6 +348,7 @@ sys_fputc:
 ; <<< we only need the file-descriptor passed to write - not like glibc where those infos are extracted out of the FILE* stream object
 ; <<< consequently the FILE* stream object is only a file-descriptor, not a real FILE* object like in glibc
 ; <<< we also consider the not-writing of all bytes in the buffer a hard error and return with EOF!
+; <<< if parameter stream == 0: stream = stdout as default
 global sys_fflush
 sys_fflush:
     .enter: ENTER
@@ -338,8 +357,15 @@ sys_fflush:
     je      .normal         ; if nbyte == 0, then just return from this function
     ; else proceed with writing
 
-    call fileno             ; extract the file-descriptor from the FILE* stream to get the parameter filedes
-    mov     rdi, rax        ; parameter filedes - move the returned fd from fileno into rsi 
+    test    rdi, rdi        ; check if rdi is empty --> NULL
+    jnz     .determin_fd    ; if its non-zero, extract the file descriptor from the FILE* stream object
+    ; else just use stdout as fd
+    mov     rdi, STDOUT     ; move fd of stdout into rdi
+    jmp     .check_rdi_end  ; skip .determin_fd section
+    .determin_fd:   
+        call fileno         ; extract the file-descriptor from the FILE* stream to get the parameter filedes
+        mov     rdi, rax    ; parameter filedes - move the returned fd from fileno into rsi 
+    .check_rdi_end:  ; label for skipping the previous label
     mov     rax, SYS_WRITE  ; move number of syscall into rax
     mov     rsi, [STDIO_BUFFER_PTR] ; parameter buf
     mov     dx, [STDIO_BUFFER_INDEX]; parameter nbyte

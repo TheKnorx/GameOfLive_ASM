@@ -1,8 +1,9 @@
 ; File for storing constants that are shared by multiple files
 
 ; generell constants
-%define NULL 			0x00       ; ((void *) 0)
+%define NULL 			0x00        ; ((void *) 0)
 %define EOF             -1
+%define STDOUT          0x01        ; stdout fd           
 
 ; syscall number constants: 
 %define SYS_WRITE       1
