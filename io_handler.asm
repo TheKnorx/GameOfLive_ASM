@@ -11,9 +11,9 @@ section .text
 
 global try_write_game_field
 ; glibc functions and variables
-extern snprintf, fopen, fprintf, perror, fflush
+extern snprintf, fopen, perror
 ; core.lib functions and variables
-extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush
+extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf
 ; project intern functions and variables
 extern FIELD_AREA, FIELD_WIDTH, FIELD_HEIGHT, GENERATIONS
 
@@ -81,10 +81,10 @@ try_write_game_field:
     mov     rsi, FILE_PREMABEL      ; parameter format
     mov     rdx, [FIELD_WIDTH]      ; first format parameter
     mov     rcx, [FIELD_HEIGHT]     ; second format parameter
-    call    fprintf                 ; write the formatted premable into the file
+    call    sys_fprintf             ; write the formatted premable into the file
     ; int fflush(FILE *_Nullable stream);
     mov     rdi, [CURRENT_FILESTREAM]; parameter stream
-    call    fflush                  ; flush all glibc buffers to guarantee a write to the file
+    ;call    fflush                  ; flush all glibc buffers to guarantee a write to the file
     ; starting now, we skip watching for errors concerning file operations
 
     ; if we came till here, we are ready to write the cells into the file:
