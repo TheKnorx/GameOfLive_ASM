@@ -1,5 +1,4 @@
-# Game_of_Assembly
-Game of life in assembly
+# Game_of_Assembly <br> Implementation of Conway's Game of Life in NASM 64 x86
 
 ## Prerequisites: 
 * Tool ImageMagick for creating a gif out of the created animation-pictures:<br>
@@ -7,10 +6,10 @@ Game of life in assembly
 * System running (debian-based) linux with Intel 64bit x86 architecture.
 
 ## Usage: 
-Creating the animation with its animation pictures:<br>
-`main <field-width> <field-height> <amount of generations>`<br>
-Creating a gif from the created animation pictures:<br>
-`make animation`<br>
+Creating the animation with its animation pictures: `main <field-width> <field-height> <amount of generations>`<br>
+Creating a gif from the created animation pictures: `make animation`<br>
+To clean the folder from all executables, the build folder and any animation pictures, you may use `make clean`.<br>
+One-liner example for creating the animation pictures and the gif file: `main 30 30 300 && make animation && make clean`<br>
 <br>Until further notice, the start (first generation) of the animation is hardcoded into the code at `field_handler:configure_field`. 
 A way of editing the start of the animation may be added in future implementations!
 
