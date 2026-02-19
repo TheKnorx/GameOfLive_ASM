@@ -6,3 +6,4 @@ gol_*
 gol.gif
 test.asm
 test
+asm-generic_errno-base.lib.inc
