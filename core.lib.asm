@@ -152,13 +152,14 @@ main:  ; actually _start
         jz      .exit_on_error          ; if it was not, terminate the program
         mov     [STDIO_BUFFER_PTR], rax ; else move pointer to allocated memory into ptr storage variable
 
-    ; restore cmd args register for main function call
-    pop     rsi
-    pop     rdi 
+    .run_process:
+        ; restore cmd args register for main function call
+        pop     rsi
+        pop     rdi 
 
-    nop
-    call    _main                       ; call main function
-    nop
+        nop
+        call    _main                       ; call main function
+        nop
 
     .end_process:  ; end the process by cleaning up of program (freeing buffers etc...)
         ; free the stdio buffer
