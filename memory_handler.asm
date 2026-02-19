@@ -1,4 +1,3 @@
-section .bss
 section .data
     ALLOC_ERROR_TEXT:   db "Calloc failed"
 section .text
@@ -27,7 +26,7 @@ try_alloc_fields:
 
         ; allocate a game field and store it in the fields_array
         ; void *calloc(size_t nmemb, size_t size);
-        ;xor     rax, rax        ; clear rax
+        xor     rax, rax        ; clear rax
         mov     rdi, [FIELD_AREA]; parameter nmemb
         mov     rsi, 0x1        ; parameter size - allocate nmemb units of size 1 byte
         call    sys_calloc      ; allocate memory --> rax = pointer to allocated memory
@@ -44,9 +43,9 @@ try_alloc_fields:
         ; void perror(const char *s);
         xor     rax, rax        ; clear rax
         mov     rdi, ALLOC_ERROR_TEXT  ; parameter s
-        call    perror
+        call    perror          ; print the error
         mov     rax, -1         ; move exit code into rax
-        jmp     sys_exit        ; exit the program - in fact jmp to it as we (should) never return from it
+        call    sys_exit        ; exit the program
         hlt                     ; we should never reach this code
 
     .return:
@@ -85,7 +84,7 @@ free_fields:
 
         ; free the allocated game fields
         ; void free(void *_Nullable ptr);
-        ;xor     rax, rax        ; clear rax
+        xor     rax, rax        ; clear rax
         mov     rdi, [FIELDS_ARRAY+0x8*r12]; parameter ptr
         call    sys_free            ; free allocated memory --> free has no return value
         ; continue allocating the next game field

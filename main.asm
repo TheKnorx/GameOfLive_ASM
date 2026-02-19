@@ -1,6 +1,4 @@
-BITS 64
-
-
+BITS 64  ; enforce 64 bit compilation
 section .bss
     ; Reserving a quad-word for each variable out of convenience so that we can use 64-bit everywhere and dont have mix 32- and 64-bit registers together
     ; Dont want to reserve less than that and begin to have a inconsistancy, perhaps writing the wrong values into registers when mixing 32 and 64 bit variables
@@ -9,7 +7,6 @@ section .bss
     GENERATIONS:    resq 0x1    ;               ...             generations             ...
     FIELD_AREA:     resq 0x1    ; reserve a qword --> 1 quadword is would be 2^64 bits ~ 2*10^9GB, so wayyyyy too much --> we do a <2^32 mod height*width> for ensuring a guaranteed fit
     FIELDS_ARRAY:   resq 0x2    ; reserve two qwords for two pointers that point to the allocated game fields
-
 section .data
     USAGE_TEXT:     db "Usage: %s <field-width> <field-height> <amount of generations>", 0xA, 0x00
 section .text
@@ -60,8 +57,10 @@ simulate:
 
         ; on every new generation we have to clear the field we will write to to not have an interference with cells of previous generations
         ; luckily, the field to write to is already in rdi but we also have to preserve all the registers --> we can re-use r13 and r14 for that
+        ; (int* field_ptr)[-]
         mov     r13, rsi        ; save rsi in r13 for now
         mov     r14, rdi        ; save rdi in r14 for now
+        ; rdi - parameter field_ptr - already in rdi
         call    clear_field     ; clear the field to write to
         mov     rsi, r13        ; restore rsi from r13
         mov     rdi, r14        ; restore rdi from r14
@@ -75,6 +74,10 @@ simulate:
 
                 ; now we have to pass the field to read, the field to write to the decide_cell_state function
                 ; along with the row and column index of the cell --> luckily the first two things are already correctly loaded
+                ; (int* field_to_write @ rdi, int* field_to_read @ rsi, int row_index @ rdx, int column_index @ rcx)[-]
+                ; rdi - parameter field_to_write - already in rdi
+                ; rdi - parameter field_to_read - already in rsi
+                ; rsi - parameter row_index - already in rsi
                 mov     rdx, r13        ; move row index into parameter register rdx 
                 mov     rcx, r14        ; move column index into parameter register rcx (--> thats why we cannot use rcx for counter stuff - gets garbled)
                 call    decide_cell_state  ; let this function decide what to do with the cell
@@ -92,8 +95,9 @@ simulate:
             jb      .for_row        ;    we continue the loop 
             ; else we fall through and enter the next generation
 
-        ; rdi already set for function parameter
-        mov     rsi, rbx        ; move generations into rsi for parameter to function
+        ; (int* field_to_save, int generation)[]
+        ; rdi - parameter field_to_save - already in rdi
+        mov     rsi, rbx        ; parameter generation - move generation counter into rsi
         call    try_write_game_field  ; write current generation to file; !we might not return from this function! 
         dec     rbx             ; rbx--
         jmp     .for_generation ; continue the loop
@@ -156,19 +160,23 @@ _main:
         ; fall through to next section
 
     .init_field:  ; init the game field; !we might not get back from this section!
+        ; (-)[-]
         call    try_alloc_fields    ; allocate the two game fields
+        ; (-)[-]
         call    configure_field     ; now we fill the field with some predefined values
 
+    ; (-)[-]
     call    simulate        ; simulate the generations
 
     .cleanup:  ; end the program by cleaning up
         ; freeing the allocated fields
+        ; (-)[-]
         call    free_fields
         jmp     .return
 
     .print_usage:
         ; int printf(const char *restrict format, ...);
-        xor     rax, rax            ; clear rax for std*-glibc function
+        xor     rax, rax            ; clear rax
         mov     rdi, USAGE_TEXT     ; parameter format
         mov     rsi, [r12]          ; first format parameter
         call    printf

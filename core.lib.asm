@@ -29,9 +29,6 @@ section .bss
 section .data
     global  STDIO_BUFFER_SIZE
     STDIO_BUFFER_SIZE:  equ     0x0200  ; allocate 512 bytes for this stdio buffer  
-    FORMAT_SPECIFIER_BEGIN: equ '%'     ; begin of a format specifyer followed by a character
-    FORMAT_SPECIFIER_STRING:equ 's'     ; %s
-    FORMAT_SPECIFIER_DIGET: equ 'd'     ; %d
 section .text
 
 %include "core.lib.inc"
@@ -86,51 +83,6 @@ section .text
     pop     r9          ; restore r9
 %endmacro
 
-; glibc functions that are needed in the meantime to support the bridge between glibc and core.lib
-extern fileno
-
-
-; this procedure acts as a bridge between glibc and core.lib for now
-; in the future, this routine should replace the _start routine of glibc 
-_DEPRECATED_start_core_lib:
-    .enter: ENTER
-    ; we have to preserve the rdi and rsi registers cause we technically execute before main
-    push    rdi
-    push    rsi
-
-    ; first initialize the stdio buffer with sys_malloc
-    ; void *malloc(size_t size);
-    mov     rdi, STDIO_BUFFER_SIZE ; parameter size
-    call    sys_malloc      ; allocate memory for stdio buffer
-    test    rax, rax        ; check if allocation was successful
-    jz      .error          ; if it was not, terminate the program
-    jmp     .return         ; else return from this procedure
-    .error: 
-        mov     rax, -1     ; parameter status move status code into rdi
-        call    sys_exit    ; force exit of program
-    .return: 
-        mov     [STDIO_BUFFER_PTR], rax  ; move pointer to allocated memory into ptr storage variable
-        ; now restore the rdi and rsi registers
-        pop     rsi
-        pop     rdi
-        LEAVE
-        ret
-
-; this procedure acts as a teardown procedure of the program - free buffers and exits the program
-; this section will be moved into the _start procedure in the future
-_DEPRECATED_end_core_lib:
-    .enter: ENTER
-    ; free the stdio buffer
-    ; void free(void *_Nullable ptr);
-    mov     rdi, [STDIO_BUFFER_PTR]
-    call    sys_free
-
-    ; and then exit the program
-    ; [[noreturn]] void _exit(int status);
-    xor     rdi, rdi        ; parameter status - 0
-    call    sys_exit        ; exit the program
-    hlt                     ; execution shouldnt reach this point
-
 
 ; for now, this procedure acts as a bridge between glibc and core.lib
 ; in the future, this routine should replace the _start routine of glibc 
@@ -162,7 +114,6 @@ main:  ; actually _start
         nop
 
     .end_process:  ; end the process by cleaning up of program (freeing buffers etc...)
-        ; free the stdio buffer
         ; void free(void *_Nullable ptr);
         mov     rdi, [STDIO_BUFFER_PTR] ; parameter ptr
         call    sys_free                ; free the stdio buffer
@@ -215,7 +166,7 @@ sys_fprintf:
         test    al, al      ; check if al is empty = null terminator
         jz      .return     ; if its empty, return from this function
         ; else continue loop
-        cmp     al, FORMAT_SPECIFIER_BEGIN ; check if al marks the beginning of a format specifier
+        cmp     al, '%'     ; check if al marks the beginning of a format specifier
         jne     .char       ; if it does not mark the beginning of a specifier, just output the char
         ; else fall through to handling the specifier
         .specifier: 
@@ -308,7 +259,7 @@ sys_fputc:
     push    rdi                 ; save parameter c onto stack for later usage
     jmp     .write_buffer       ; skip the following section
 
-    .flush_buffer:  ; if we came here - sys_fflush guarantees that the indnex is 0, so we dont jmp here again --> if no error occured!
+    .flush_buffer:  ; if we came here - sys_fflush guarantees that the index is 0, so we dont jmp here again --> if no error occured!
         mov     rdi, rsi        ; parameter stream - file descriptor to write to
         call    sys_fflush      ; flush the stdio buffer
         test    rax, rax        ; check if rax == 0
@@ -359,15 +310,9 @@ sys_fflush:
     ; else proceed with writing
 
     test    rdi, rdi        ; check if rdi is empty --> NULL
-    jnz     .determin_fd    ; if its non-zero, extract the file descriptor from the FILE* stream object
-    ; else just use stdout as fd
-    mov     rdi, STDOUT     ; move fd of stdout into rdi
-    jmp     .check_rdi_end  ; skip .determin_fd section
-    .determin_fd:   
-        jmp     .check_rdi_end  ; skip this for now cause when using sys_fopen implementation, we already pass a fd in rdi
-        call    fileno      ; extract the file-descriptor from the FILE* stream to get the parameter filedes
-        mov     rdi, rax    ; parameter filedes - move the returned fd from fileno into rsi 
-    .check_rdi_end:  ; label for skipping the previous label
+    jnz     .check_fd_end   ; if its non-zero, just continue with execution
+    mov     rdi, STDOUT     ; else use stdout as fd
+    .check_fd_end:  ; label for skipping the previous instruction
     mov     rax, SYS_WRITE  ; move number of syscall into rax
     mov     rsi, [STDIO_BUFFER_PTR] ; parameter buf
     mov     dx, [STDIO_BUFFER_INDEX]; parameter nbyte

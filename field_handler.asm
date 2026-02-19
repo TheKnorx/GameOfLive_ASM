@@ -1,5 +1,3 @@
-section .bss
-section .data
 section .text
 
 global configure_field, decide_cell_state
@@ -17,23 +15,15 @@ extern FIELDS_ARRAY, FIELD_WIDTH, FIELD_AREA, FIELD_HEIGHT
     %%dead:
 %endmacro
 
-; macro for intializing registers for and performing the function call to _access_field  
-; it takes two parameters: the register storing the y coordinate part, and the register storing the x part
-%macro _OBSOLETE_ACCESS_FIELD 2
-    mov     rdi, [rbp-8]        ; move field_to_read pointer into rsi
-    mov     rsi, %1             ; move row_index/y into rsi
-    mov     rdx, %2             ; move column_index/x into rdx
-    call    _access_field       ; get cell value at that position in rax
-%endmacro
-
 ; macro for intializing registers for and performing the function call to _get_coordinate, and accessing the field
 ; it takes two parameters: the register storing the y coordinate part, and the register storing the x part
 %macro _ACCESS_FIELD 2
-    mov     rdi, [rbp-8]        ; move field_to_read pointer into rsi
-    mov     rsi, %1             ; move row_index/y into rsi
-    mov     rdx, %2             ; move column_index/x into rdx
-    call    _get_coordinate     ; get the 1d coordinate
+    ; (int* field_to_write, int y, int x)[int a]
+    mov     rdi, %1             ; parameter y - move row_index into rsi
+    mov     rsi, %2             ; parameter x - move column_index into rdx
+    call    _get_coordinate     ; get the 1d coordinate in rax
     ; access the field with the calculated 1d coordinate
+    mov     rdi, [rbp-8]        ; parameter field_to_write - move field_to_read pointer into rsi
     mov     al, [rdi+rax]       ; access the field with rdi+rax and write the value back to rax
     movzx   rax, al             ; migrate al into rax
 %endmacro
@@ -93,14 +83,13 @@ _modolo:
     ret                         ; return from procedure
 
 
-; procedure for calculating the 1d coordinate (x) of a given 2d coodinate (x|y)
-; and returning it in rax
+; procedure for calculating the 1d coordinate (x) of a given 2d coodinate (x|y) and returning it in rax
 ; !We pass the coordinate in switched order!
-; (int* field_to_write, int y, int x)[int a]
+; (int y, int x)[int a]
 _get_coordinate:
-    mov     rax, rsi            ; move rsi/y into rax for MUL operation
-    mov     r9, rdx             ; save rdx/x to r9 for later use
-    xor     rdx, rdx            ; clear rdx so it doesnt mess with the MUL --> RDX:RAX
+    mov     rax, rdi            ; move rdi/y into rax for MUL operation
+    mov     r9, rsi             ; save rsi/x to r9 for later use
+    xor     rsi, rsi            ; clear rsi so it doesnt mess with the MUL --> RDX:RAX
     mov     rcx, [FIELD_WIDTH]  ; move field_width into rcx
     mul     rcx                 ; rax*rcx --> y*field_width --> result in rax
 
@@ -131,11 +120,12 @@ decide_cell_state:
     mov     r15, rcx            ; save rcx/column_index into r15
 
     ; if (field_to_read[row_index][ _modolo(column_index-1, FIELD_WIDTH) ]) neigbours++;
+    ; using: (int x, int y)[int (x mod y)]
     .left: 
         ; mod(column_index-1, FIELD_WIDTH)
-        mov     rdi, r15        ; move column_index into rdi
-        sub     rdi, 1          ; subtract 1 from it
-        mov     rsi, [FIELD_WIDTH]; move field_width into rsi
+        mov     rdi, r15        ; parameter x - move column_index into rdi
+        sub     rdi, 1          ; subtract 1 from parameter x
+        mov     rsi, [FIELD_WIDTH]; parameter y - move field_width into rsi
         call    _modolo         ; column-1 mod field_width --> result in rax
 
         ; field_to_read[row_index][column_index-1]
@@ -147,9 +137,9 @@ decide_cell_state:
     ; if (field_to_read[row_index][ _modolo(column_index+1, FIELD_WIDTH) ]) neigbours++;
     .right: 
         ; mod(column_index+1, FIELD_WIDTH)
-        mov     rdi, r15        ; move column_index into rdi
-        add     rdi, 1          ; add 1 to it
-        mov     rsi, [FIELD_WIDTH]; move field_width into rsi
+        mov     rdi, r15        ; parameter x - move column_index into rdi
+        add     rdi, 1          ; add 1 to parameter x
+        mov     rsi, [FIELD_WIDTH]; parameter y - move field_width into rsi
         call    _modolo         ; column+1 mod field_width --> result in rax
 
         ; field_to_read[row_index][ column_index+1 ]
@@ -163,9 +153,9 @@ decide_cell_state:
     ;         neighbours++;
     .below: 
         ; _modolo(row_index-1, FIELD_HEIGHT)
-        mov     rdi, r14        ; move row_index into rax
-        sub     rdi, 0x01       ; move one row below the cell
-        mov     rsi, [FIELD_HEIGHT]; move the field_height into rsi
+        mov     rdi, r14        ; parameter x - move row_index into rdi
+        sub     rdi, 0x01       ; move one row below the cell - parameter x -1
+        mov     rsi, [FIELD_HEIGHT]; parameter y - move the field_height into rsi
         call    _modolo         ; row_index-1 mod field_height --> result in rax
         mov     rbx, rax        ; overwrite rbx with new (temporary) row_index 
 
@@ -177,10 +167,10 @@ decide_cell_state:
         ; else continue iterating through below neighbours
 
         ; _modolo(column_index-1+i, FIELD_WIDTH)
-        mov     rdi, r15        ; move column_index into rdi
-        sub     rdi, 0x01       ; rdi-- / column_index-1
+        mov     rdi, r15        ; parameter x - move column_index into rdi
+        sub     rdi, 0x01       ; rdi-- meaning column_index-1
         add     rdi, r12        ; add loop index to column_index
-        mov     rsi, [FIELD_WIDTH]; move field_width int rsi
+        mov     rsi, [FIELD_WIDTH]; parameter y - move field_width int rsi
         call    _modolo         ; column_index-1+i mod field_index --> result in rax
 
         ; field_to_read[ row_index-/+1 ][ column_index-1+i ]
@@ -208,9 +198,9 @@ decide_cell_state:
         push    r14             ; push r14 so that we can use its value later on in the .check section
 
         ; _modolo(row_index+1, FIELD_HEIGHT)
-        mov     rdi, r14        ; move row_index into rax
-        add     rdi, 0x01       ; move one row above the cell
-        mov     rsi, [FIELD_HEIGHT]; move the field_height into rsi
+        mov     rdi, r14        ; parameter x - move row_index into rax
+        add     rdi, 0x01       ; move one row above the cell - parameter x - 1
+        mov     rsi, [FIELD_HEIGHT]; parameter y - move the field_height into rsi
         call    _modolo         ; row_index+1 mod field_height --> result in rax
         mov     rbx, rax        ; overwrite rbx with new (temporary) row_index 
 
@@ -248,10 +238,10 @@ decide_cell_state:
             jz     .return      ; al is 0, meaning it has too many neighbours, meaning we kill it, meaning we return from the function
             ; else fall through to the write_back
         .write_back:
+            mov     rdi, r14    ; parameter y - move row_index into rdi
+            mov     rsi, r15    ; parameter x - move column_index into rsi
+            call    _get_coordinate; get the 1d coordinate in rax
             mov     rdi, [rbp-16]; move field_to_write into rdi
-            mov     rsi, r14    ; move row_index/y into rsi
-            mov     rdx, r15    ; move column_index/x into rdx
-            call    _get_coordinate; get the 1d coordinate
             mov     byte [rdi + rax], 0x01; set cell from rdi at the calculated coordinate to alive
 
     .return: 

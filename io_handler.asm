@@ -38,7 +38,7 @@ try_write_game_field:
 
     ; then allocate memory for the new file name
     ; void *malloc(size_t size);
-    ;xor     rax, rax                ; clear rax for glibc call
+    xor     rax, rax                ; clear rax
     mov     rdi, FILENAME_SIZE      ; parameter size - allocate exactly 14 bytes
     call    sys_malloc              ; allocate space for new filename
     cmp     rax, 0x00               ; check if the pointer from malloc is NULL
@@ -46,8 +46,8 @@ try_write_game_field:
     mov     [CURRENT_FILENAME], rax ; else we store the pointer in the variable
 
     ; now create the new filename and copy it into the allocated buffer
-    ;int snprintf(char str[restrict .size], size_t size,
-    ;               const char *restrict format, ...);
+    ; int snprintf(char str[restrict .size], size_t size,
+    ;              const char *restrict format, ...);
     xor     rax, rax                ; clear rax once again for glibc call
     mov     rdi, [CURRENT_FILENAME] ; parameter char str[restrict .size]
     mov     rsi, FILENAME_SIZE      ; parameter size
@@ -69,7 +69,7 @@ try_write_game_field:
 
     ; as the filename is not longer of use, free its allocated space
     ; void free(void *_Nullable ptr);
-    ;xor     rax, rax                ; clear rax
+    xor     rax, rax                ; clear rax
     mov     rdi, [CURRENT_FILENAME] ; parameter ptr
     call    sys_free                ; free allocated memory
 
@@ -82,9 +82,6 @@ try_write_game_field:
     mov     rdx, [FIELD_WIDTH]      ; first format parameter
     mov     rcx, [FIELD_HEIGHT]     ; second format parameter
     call    sys_fprintf             ; write the formatted premable into the file
-    ; int fflush(FILE *_Nullable stream);
-    mov     rdi, [CURRENT_FILESTREAM]; parameter stream
-    ;call    fflush                  ; flush all glibc buffers to guarantee a write to the file
     ; starting now, we skip watching for errors concerning file operations
 
     ; if we came till here, we are ready to write the cells into the file:
@@ -107,6 +104,7 @@ try_write_game_field:
         .write:
         ; write char into file
         ; int fputc(int c, FILE *stream);
+        xor     rax, rax        ; clear rax
         mov     rsi, [CURRENT_FILESTREAM]  ; parameter FILE *stream
         call    sys_fputc       ; write cell into file (--> gets buffered most likely by stdout)
 
@@ -119,11 +117,12 @@ try_write_game_field:
         mov     rdi, ERROR_TEXT ; parameter const char *s
         call    perror          ; print error text with additional error information
         mov     rax, -1         ; exit code
-        jmp     sys_exit        ; exit the program - we can jmp there cause we should never erturn from it
+        call    sys_exit        ; exit the program
         hlt                     ; this code should never be reached
 
     .return: 
         ; int fflush(FILE *_Nullable stream);
+        xor     rax, rax        ; clear rax
         mov     rdi, [CURRENT_FILESTREAM]  ; parameter stream
         call    sys_fflush      ; flush any buffer and write everything to the file
         pop     r13             ; restore pushed r13
