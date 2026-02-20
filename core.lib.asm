@@ -262,7 +262,54 @@ sys_printf:
     call    sys_fprintf     ; print to stdout --> rax = amount of chars printed
     ret                     ; return from function with rax
 
-sys_perror: hlt
+
+; Replacement-function for: 
+; void perror(const char *s);
+; <<< we directly map the set errno to the corresponding string and print it like perror would
+; <<< if parameter s is empty, behavior is undefined
+extern sys_max_errno    ; max offset of errno string table for out-of-bounds checking
+extern sys_errno_map    ; errno string table
+global sys_perror
+sys_perror:
+    .enter: ENTER 
+
+    ; int printf(const char *restrict format, ...);
+    xor     rax, rax    ; clear rax
+    ; rdi - parameter format - already in rdi
+    call    sys_printf  ; print the test provided to the function
+    ; then print a colon and a space
+    ; int fputc(int c, FILE *stream)
+    xor     rax, rax    ; clear rax
+    mov     rdi, ':'    ; parameter c
+    mov     rsi, STDOUT ; parameter stream - to stdout
+    call    sys_fputc   ; print the colon
+    xor     rax, rax    ; clear rax
+    mov     rdi, ' '    ; parameter c - a space
+    mov     rsi, STDOUT ; parameter stream - to stdout
+    call    sys_fputc   ; print the space
+
+    ; now print the corresponding string to the errno number
+    ; we do this by indexing the errno table
+    ; int printf(const char *restrict format, ...);
+    mov     eax, SYS_ERRNO  ; move errno number into 32 bit register eax
+    lea     rax, [rax*8]    ; calculate table offset relative to the errno number
+    cmp     rax, sys_max_errno  ; check if we are in or out of bounds
+    jg      .invalid_errno  ; the errno number is invalid --> handle it
+    ; else fall through to handling the errno as usual
+
+    .valid_errno:
+        lea     rdi, [sys_errno_map+rax*8]  ; parameter rdi - errno string
+        jmp     .print_errno                ; jmp to print section
+    .invalid_errno: lea rdi, [sys_errno_map]; parameter format - use the 0th entry in the table for invalid errno numbers
+    .print_errno: call  sys_printf          ; print the errno string
+    
+    ; finally flush the buffer to make that shit actually print tom the console
+    ; int fflush(FILE *_Nullable stream);
+    call    sys_fflush
+
+    .return: 
+        LEAVE
+        ret 
 
 
 ; Replacement-function for: 
@@ -564,6 +611,7 @@ sys_strlen:
     sub     rax, 0x01       ; we have to exclude the null terminator
     .return: ret
 
+
 ; Replacement-function for:
 ; void *memset(void s[.n], int c, size_t n);
 ; --> needed asm-inst: rep stosb
@@ -599,6 +647,7 @@ sys_memcpy:
 
     mov     rax, r9     ; move r9/s[.n] into rax for returning
     .return: ret 
+
 
 ; Replacement function for:
 ; int atoi(const char *nptr);
@@ -666,7 +715,6 @@ sys_itoa:
         add     rcx, 0x01       ; add one to index to compensate for ADD at end of loop
         lea     rax, [rax+rcx]  ; move pointer forward to value
         ret                     ; return with the pointer pointing the the start of the value
-
 
 
 ; Replacement function for:
