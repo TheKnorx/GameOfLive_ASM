@@ -1,21 +1,25 @@
-BITS 64  ; enforce 64 bit compilation
+BITS 64  ; enforce 64 bit compilation of program
 section .bss
     ; Reserving a quad-word for each variable out of convenience so that we can use 64-bit everywhere and dont have mix 32- and 64-bit registers together
     ; Dont want to reserve less than that and begin to have a inconsistancy, perhaps writing the wrong values into registers when mixing 32 and 64 bit variables
+    global FIELD_WIDTH
     FIELD_WIDTH:    resq 0x1    ; reserved 1 quadword for the field width (--> max 2^64 bits ~ 2*10^9GB never gonna need that)
+    global FIELD_HEIGHT
     FIELD_HEIGHT:   resq 0x1    ;               ...             field height            ...
+    global GENERATIONS
     GENERATIONS:    resq 0x1    ;               ...             generations             ...
-    FIELD_AREA:     resq 0x1    ; reserve a qword --> 1 quadword is would be 2^64 bits ~ 2*10^9GB, so wayyyyy too much --> we do a <2^32 mod height*width> for ensuring a guaranteed fit
+    global FIELD_AREA
+    FIELD_AREA:     resq 0x1    ; reserve a qword for that for convenience
+    global FIELDS_ARRAY
     FIELDS_ARRAY:   resq 0x2    ; reserve two qwords for two pointers that point to the allocated game fields
 section .data
     USAGE_TEXT:     db "Usage: %s <field-width> <field-height> <amount of generations>", 0xA, 0x00
 section .text
 
-global FIELD_WIDTH, FIELD_HEIGHT, FIELD_AREA, FIELDS_ARRAY, GENERATIONS
 ; project functions that may not return
-extern try_alloc_fields
+extern try_alloc_fields, try_write_game_field
 ; project functions (that always return)
-extern configure_field, free_fields, decide_cell_state, decide_cell_state, clear_field, ascii_to_int, try_write_game_field
+extern configure_field, free_fields, decide_cell_state, clear_field
 ; core.lib functions
 extern sys_atoi, sys_printf, sys_memset
 
