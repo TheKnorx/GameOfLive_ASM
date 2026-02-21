@@ -120,7 +120,7 @@ main:  ; actually _start
         jmp     .exit_normal            ; we assume that if we came here the program ran successfully - so we exit as usual (with status 0)
 
     .exit_on_error: 
-        mov     rax, -1     ; parameter status move status code into rdi
+        mov     rdi, -1     ; parameter status move status code into rdi
         call    sys_exit    ; force exit of program
     .exit_normal: 
         ; exit the program with status code 0
@@ -222,7 +222,7 @@ sys_fprintf:
             push    rcx             ; save rcx counter variable
             xor     rdi, rdi        ; clear rdi
             mov     dil, [r13+rcx]  ; parameter c - put the char from the string into 
-            mov     rsi, r13        ; parameter stram - saved in r13
+            mov     rsi, r12        ; parameter stram - saved in r13
             call    sys_fputc       ; pass char along to fputc
             pop     rcx             ; restore rcx counter variable
             ; fall through to .continue_loop
@@ -273,6 +273,9 @@ global sys_perror
 sys_perror:
     .enter: ENTER 
 
+    push    r12         ; make r12 available for storage
+    mov     r12d, [SYS_ERRNO]  ; save errno number into r12 
+
     ; int printf(const char *restrict format, ...);
     xor     rax, rax    ; clear rax
     ; rdi - parameter format - already in rdi
@@ -289,25 +292,37 @@ sys_perror:
     call    sys_fputc   ; print the space
 
     ; now print the corresponding string to the errno number
-    ; we do this by indexing the errno table
+    ; we do this by indexing the errno table, getting the pointer to the pointer to the string
     ; int printf(const char *restrict format, ...);
-    mov     eax, SYS_ERRNO  ; move errno number into 32 bit register eax
-    lea     rax, [rax*8]    ; calculate table offset relative to the errno number
-    cmp     rax, sys_max_errno  ; check if we are in or out of bounds
+    mov     eax, r12d       ; move errno number into 32 bit register eax
+    cmp     rax, sys_max_errno  ; check if we are in or out of bounds (upper bound=)
     jg      .invalid_errno  ; the errno number is invalid --> handle it
+    cmp     rax, 0x01       ; also check the under bound
+    jb      .invalid_errno  ; the errno number is invalid --> handle it
     ; else fall through to handling the errno as usual
+    lea     rax, [rax*8]    ; calculate table offset relative to the errno number
 
     .valid_errno:
-        lea     rdi, [sys_errno_map+rax*8]  ; parameter rdi - errno string
+        lea     rdi, [sys_errno_map+rax]    ; parameter rdi - pointer to errno string
         jmp     .print_errno                ; jmp to print section
     .invalid_errno: lea rdi, [sys_errno_map]; parameter format - use the 0th entry in the table for invalid errno numbers
-    .print_errno: call  sys_printf          ; print the errno string
+    .print_errno: 
+        ; now dereference the pointer to the pointer, so it just becomes a pointer to the char-array
+        mov     rdi, [rdi]  ; dereference so we get a nice pointer to the char-array
+        xor     rax, rax    ; clear rax
+        call    sys_printf  ; print the errno string
+
+    mov     rdi, 0x0A   ; parameter c - \n
+    mov     rsi, STDOUT ; parameter stream - to stdout
+    call    sys_fputc   ; print the space
     
     ; finally flush the buffer to make that shit actually print tom the console
     ; int fflush(FILE *_Nullable stream);
+    xor     rdi, rdi        ; parameter stream - clear rdi cause if stream == NULL: stream = stdout 
     call    sys_fflush
 
     .return: 
+        pop     r12
         LEAVE
         ret 
 
