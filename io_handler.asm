@@ -11,9 +11,9 @@ section .text
 
 global try_write_game_field
 ; glibc functions and variables
-extern snprintf, perror
+extern snprintf
 ; core.lib functions and variables
-extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf, sys_fopen
+extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf, sys_fopen, sys_perror
 ; project intern functions and variables
 extern FIELD_AREA, FIELD_WIDTH, FIELD_HEIGHT, GENERATIONS
 
@@ -115,7 +115,7 @@ try_write_game_field:
         ; void perror(const char *s);
         xor     rax, rax        ; clear rax
         mov     rdi, ERROR_TEXT ; parameter const char *s
-        call    perror          ; print error text with additional error information
+        call    sys_perror      ; print error text with additional error information
         mov     rax, -1         ; exit code
         call    sys_exit        ; exit the program
         hlt                     ; this code should never be reached

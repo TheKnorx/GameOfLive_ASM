@@ -5,10 +5,8 @@ section .text
 global try_alloc_fields, free_fields, clear_field
 ; Project internal functions and variables
 extern FIELD_AREA, FIELDS_ARRAY
-; glibc functions and variables
-extern perror
 ; core.lib functions
-extern sys_calloc, sys_free, sys_exit
+extern sys_calloc, sys_free, sys_exit, sys_perror
 
 %include "core.lib.inc"
 
@@ -43,8 +41,8 @@ try_alloc_fields:
         ; void perror(const char *s);
         xor     rax, rax        ; clear rax
         mov     rdi, ALLOC_ERROR_TEXT  ; parameter s
-        call    perror          ; print the error
-        mov     rax, -1         ; move exit code into rax
+        call    sys_perror      ; print the error
+        mov     rdi, -1         ; move exit code into rax
         call    sys_exit        ; exit the program
         hlt                     ; we should never reach this code
 
