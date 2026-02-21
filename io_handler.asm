@@ -3,6 +3,10 @@ section .bss
     CURRENT_FILESTREAM: resq 0x01   ; for storing the current pointer to the opened file using the generated filename
 section .data
     FILENAME:           db "gol_%05d.pbm", 0x00 ; file name for the game saved fields 
+    FILENAME_START:     db "gol_", 0x00         ; start of filename
+    FILENAME_END:       db ".pbm", 0x00         ; end   of filename
+    FILENAME_PART_SIZE: equ 0x04                ; its convenient that FILENAME_START and _END are of the same size
+    FILENAME_NR_SIZE:   equ 0x05                ; amount of digits the number can have
     FILENAME_SIZE:      equ 14                  ; size of filename after format expansion
     FOPEN_FILEMODE:     db "w", 0x00            ; file mode to open file with --> create on write
     FILE_PREMABEL:      db "P1", 0x0A, "%d %d", 0x0A, 0x00  ; .pbm files need this for beeing interpreted/displayed correcty
@@ -10,10 +14,8 @@ section .data
 section .text
 
 global try_write_game_field
-; glibc functions and variables
-extern snprintf
-; core.lib functions and variables
-extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf, sys_fopen, sys_perror
+; core.lib functions
+extern sys_malloc, sys_free, sys_exit, sys_fputc, sys_fflush, sys_fprintf, sys_fopen, sys_perror, sys_memcpy, sys_itoa, sys_memset
 ; project intern functions and variables
 extern FIELD_AREA, FIELD_WIDTH, FIELD_HEIGHT, GENERATIONS
 
@@ -48,14 +50,60 @@ try_write_game_field:
     ; now create the new filename and copy it into the allocated buffer
     ; int snprintf(char str[restrict .size], size_t size,
     ;              const char *restrict format, ...);
-    xor     rax, rax                ; clear rax once again for glibc call
-    mov     rdi, [CURRENT_FILENAME] ; parameter char str[restrict .size]
-    mov     rsi, FILENAME_SIZE      ; parameter size
-    mov     rdx, FILENAME           ; parameter char *restrict format
-    mov     rcx, r12                ; format parameter - fill into the filename the generation
-    call    snprintf                ; do the magick!
-    cmp     rax, 0x00               ; compare return value of snprintf --> success means not negative
-    jl      .failed                 ; the return value is negativ fuck --> print error and exit
+    ;xor     rax, rax                ; clear rax once again for glibc call
+    ;mov     rdi, [CURRENT_FILENAME] ; parameter char str[restrict .size]
+    ;mov     rsi, FILENAME_SIZE      ; parameter size
+    ;mov     rdx, FILENAME           ; parameter char *restrict format
+    ;mov     rcx, r12                ; format parameter - fill into the filename the generation
+    ;call    snprintf                ; do the magick!
+    ;cmp     rax, 0x00               ; compare return value of snprintf --> success means not negative
+    ;jl      .failed                 ; the return value is negativ fuck --> print error and exit
+
+
+    ; now create the new filename and copy it into the allocated buffer
+    ; first copy the part of the filename into the buffer, that we know is always the same using
+    ; void *memcpy(void dest[restrict .n], const void src[restrict .n], size_t n);
+    mov     rdi, [CURRENT_FILENAME] ; parameter dest[restrict .n]
+    mov     rsi, FILENAME_START   ; parameter src[restrict .n]
+    mov     rdx, FILENAME_PART_SIZE ; parameter n
+    call    sys_memcpy              ; copy the start of the filename into the buffer
+
+    ; second convert the generation counter into ascii using
+    ; char* itoa(char str[restrict .size], size_t size, int number)
+    ; now we know that the number can only have 5 decimal places, so we can simply
+    ; pass a pointer to the beginning of the number to itoa and itoa will copy the number into the right place
+    ; given that of course that a possible space between the number and the FILENAME_START has to be padded with spaces using
+    ; void *memset(void s[.n], int c, size_t n);
+    push    r13                     ; make r13 available for storage
+    mov     r13, [CURRENT_FILENAME] ; move pointer to filename buffer into r13
+    lea     r13, [r13+FILENAME_PART_SIZE] ; move pointer to start of number
+    xor     rax, rax                ; clear rax
+    mov     rdi, r13                ; parameter s[.n]
+    mov     rsi, '0'                ; parameter c - padd space with zeros
+    mov     rdx, FILENAME_NR_SIZE   ; parameter n
+    call    sys_memset              ; padd the space of the number with ascii zeros
+
+    ; convert the generation number into a ascii number
+    xor     rax, rax                ; clear rax
+    mov     rdi, r13                ; parameter str[restrict .size]
+    mov     rsi, FILENAME_NR_SIZE   ; parameter size
+    add     rsi, 0x01               ; add 1 to parameter size to make room for \0
+    mov     rdx, r12                ; parameter number
+    call    sys_itoa                ; convert the number in r12 to ascii --> rax == ptr to ascii but we ignore it
+
+    ; copy the end of the filename into the buffer
+    lea     r13, [r13+FILENAME_NR_SIZE] ; move pointer to end of ascii number - r13 should now point to the returned \0 of itoa
+    xor     rax, rax                ; clear rax
+    mov     rdi, r13                ; parameter dest[restrict .n]
+    mov     rsi, FILENAME_END       ; parameter src[restrict .n]
+    mov     rdx, FILENAME_PART_SIZE ; parameter n
+    call    sys_memcpy              ; copy the start of the filename into the buffer
+
+    ; finally to make things round, append a \0 to the end of the filename buffer and pop r13
+    lea     r13, [r13+FILENAME_PART_SIZE] ; move pointer to the very last byte of the buffer
+    mov     byte [r13], 0x00        ; append a \0 to the end 
+    pop     r13                     ; restore pushed r13
+
 
     ; next open the file using the newly generated filename
     ; FILE *fopen(const char *restrict pathname, const char *restrict mode);
