@@ -19,7 +19,7 @@ section .text
 ; project functions that may not return
 extern try_alloc_fields, try_write_game_field
 ; project functions (that always return)
-extern configure_field, free_fields, decide_cell_state, clear_field
+extern configure_field, free_fields, decide_cell_state
 ; core.lib functions
 extern sys_atoi, sys_printf, sys_memset
 
