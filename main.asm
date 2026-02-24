@@ -122,8 +122,8 @@ simulate:
 ; main entry point of program - as long as we depend on glibc the real main sits in core.lib and acts like _start
 ; we expect the width, the height of the game field as well as the amount of generations to simulate via command line arguments
 ; (int argc at rdi, char** argv at rsi)[int return-code]
-global _main
-_main: 
+global main
+main: 
     .enter: ENTER
 
     ; Additional registers for additional storage:
@@ -185,7 +185,7 @@ _main:
         ; int printf(const char *restrict format, ...);
         xor     rax, rax            ; clear rax
         mov     rdi, USAGE_TEXT     ; parameter format
-        mov     rsi, [r12]          ; first format parameter
+        mov     rsi, [rsi]          ; first format parameter
         call    sys_printf          ; print the usage text
         ; fall through to .return section
 

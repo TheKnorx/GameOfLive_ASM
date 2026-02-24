@@ -84,50 +84,60 @@ section .text
 %endmacro
 
 
-; for now, this procedure acts as a bridge between glibc and core.lib
-; in the future, this routine should replace the _start routine of glibc 
-global main
-extern _main
-main:  ; actually _start
-    .align_stack: ENTER       ; align the stack to mod 16
+; _start routine of the process - init the buffers, start program and tear it down afterwards 
+global _start
+extern main
+_start:
+    .align_stack: ENTER         ; align the stack to mod 16   
 
-    ; we have to preserve the rdi and rsi registers cause we execute after actuall _start
-    push    rdi
-    push    rsi
-
-    .init_process:  ; init the process with all its buffers and stuff idk
+    .init_process:  ; init the process with all its buffers and command line arguments and stuff idk
         ; first initialize the stdio buffer with sys_malloc
         ; void *malloc(size_t size);
         mov     rdi, STDIO_BUFFER_SIZE  ; parameter size
-        call    sys_malloc              ; allocate memory for stdio buffer
-        test    rax, rax                ; check if allocation was successful
-        jz      .exit_on_error          ; if it was not, terminate the program
+        call    sys_malloc          ; allocate memory for stdio buffer
+        test    rax, rax            ; check if allocation was successful
+        jz      .exit_on_error      ; if it was not, terminate the program
         mov     [STDIO_BUFFER_PTR], rax ; else move pointer to allocated memory into ptr storage variable
 
-    .run_process:
-        ; restore cmd args register for main function call
-        pop     rsi
-        pop     rdi 
+        ; second initialize the registers that hold the amount of the command line argument and the table to them
+        lea     rsi, [rbp+16]       ; move pointer to argument table into source index register
 
+        ; now count the amount of arguments in the table
+        xor     rcx, rcx            ; clear index 
+        .for: 
+            lea     rdx, [rsi+8*rcx]; move pointer to possible argument string into rdx
+            cmp     byte [rdx], 0x00; check if we reached the null terminator - end of the argument table
+            je      .end_for        ; if its a null terminator, end the loop
+            add     rcx, 0x01       ; else increment the index
+            jmp     .for            ; and continue the loop
+        .end_for:  ; label for breaking the for loop
+            mov     rdi, rcx        ; move amount of arguments into destination index register
+
+    .run_process:
         nop
-        call    _main                       ; call main function
+        call    main    ; call main function
         nop
 
     .end_process:  ; end the process by cleaning up of program (freeing buffers etc...)
+        xor     rax, rax            ; clear rax 
+        xor     rdi, rdi            ; clear rdi for fflush --> stream gets stdout
+        call    sys_fflush          ; flush all buffers to default: stdout
+
         ; void free(void *_Nullable ptr);
+        xor     rax, rax            ; clear rax
         mov     rdi, [STDIO_BUFFER_PTR] ; parameter ptr
-        call    sys_free                ; free the stdio buffer
-        jmp     .exit_normal            ; we assume that if we came here the program ran successfully - so we exit as usual (with status 0)
+        call    sys_free            ; free the stdio buffer
+        jmp     .exit_normal        ; we assume that if we came here the program ran successfully - so we exit as usual (with status 0)
 
     .exit_on_error: 
-        mov     rdi, -1     ; parameter status move status code into rdi
-        call    sys_exit    ; force exit of program
+        mov     rdi, -1             ; parameter status move status code into rdi
+        call    sys_exit            ; force exit of program
     .exit_normal: 
         ; exit the program with status code 0
         ; [[noreturn]] void _exit(int status);
-        xor     rdi, rdi        ; parameter status - 0
-        call    sys_exit        ; exit the program
-        hlt                     ; execution shouldnt reach this point
+        xor     rdi, rdi            ; parameter status - 0
+        call    sys_exit            ; exit the program
+        hlt                         ; execution shouldnt reach this point
 
 
 ; Replacement-function for:
