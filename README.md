@@ -1,4 +1,4 @@
-# Game_of_Assembly <br> Implementation of Conway's Game of Life in NASM 64 x86
+# Game_of_Assembly <br> Implementation of Conway's Game of Life in NASM 64 x86 assembly
 
 ## Prerequisites: 
 * Tool ImageMagick for creating a gif out of the created animation-pictures:<br>
