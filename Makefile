@@ -14,9 +14,11 @@ SHELL := bash
 # ---- toolchain ----
 NASM ?= nasm
 CC   ?= gcc
+LD   ?= ld
 
 NASMFLAGS ?= -f elf64 -g -F dwarf
-LDFLAGS   ?= -no-pie
+#LDFLAGS   ?= -no-pie
+LDFLAGS   ?= -m elf_x86_64 -static -e _start
 
 # ---- project ----
 TARGET := main
@@ -35,15 +37,25 @@ $(BUILD_DIR):
 	@mkdir -p "$(BUILD_DIR)"
 
 # Compile rule (prints header, indents assembler output)
+#$(BUILD_DIR)/%.o: %.asm | $(BUILD_DIR)
+#	@printf '\n== Compiling: %s ==\n' "$$(realpath "$<")"
+#	@$(NASM) $(NASMFLAGS) "$<" -o "$@" 2>&1 | sed 's/^/  /'
+#	@printf '  -> %s\n' "$@"
+
+# Link rule (prints header, indents linker output)
+#$(TARGET): $(OBJS)
+#	@printf '\n== Linking -> %s/%s ==\n' "$$(pwd)" "$(TARGET)"
+#	@$(CC) $(LDFLAGS) $(OBJS) -o "$(TARGET)" 2>&1 | sed 's/^/  /'
+#	@printf '\nBuild successful: %s/%s\n' "$$(pwd)" "$(TARGET)"
+
 $(BUILD_DIR)/%.o: %.asm | $(BUILD_DIR)
 	@printf '\n== Compiling: %s ==\n' "$$(realpath "$<")"
 	@$(NASM) $(NASMFLAGS) "$<" -o "$@" 2>&1 | sed 's/^/  /'
 	@printf '  -> %s\n' "$@"
 
-# Link rule (prints header, indents linker output)
 $(TARGET): $(OBJS)
 	@printf '\n== Linking -> %s/%s ==\n' "$$(pwd)" "$(TARGET)"
-	@$(CC) $(LDFLAGS) $(OBJS) -o "$(TARGET)" 2>&1 | sed 's/^/  /'
+	@$(LD) $(LDFLAGS) $(OBJS) -o "$(TARGET)" 2>&1 | sed 's/^/  /'
 	@printf '\nBuild successful: %s/%s\n' "$$(pwd)" "$(TARGET)"
 
 test: test.asm core.lib.asm core.lib.inc
